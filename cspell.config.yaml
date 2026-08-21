@@ -24,3 +24,7 @@ dictionaries:
   - project-words
 ignorePaths:
   - "/project-words.txt"
+  # Vietnamese-language documentation. cspell has no maintained Vietnamese
+  # dictionary, so checking it against the English dictionary produces
+  # nothing but false positives on ordinary Vietnamese words.
+  - "/docs/oauth-setup.md"

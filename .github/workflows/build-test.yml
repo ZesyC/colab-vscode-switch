@@ -148,23 +148,39 @@ jobs:
     # Limit running the E2E tests until unit tests pass to save on resources.
     needs: unitTests
     env:
-      # Secrets and variables are sourced from the "E2E Tests" environment.
+      IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      # Secrets and variables are sourced from the "E2E Tests" environment above.
+      # For fork PRs, no environment is selected, so these all resolve to empty
+      # strings rather than exposing real values.
       TEST_ACCOUNT_EMAIL: ${{ secrets.TEST_ACCOUNT_EMAIL }}
       TEST_ACCOUNT_PASSWORD: ${{ secrets.TEST_ACCOUNT_PASSWORD }}
       COLAB_EXTENSION_ENVIRONMENT: ${{ vars.COLAB_EXTENSION_ENVIRONMENT }}
       COLAB_EXTENSION_CLIENT_ID: ${{ secrets.COLAB_EXTENSION_CLIENT_ID }}
       COLAB_EXTENSION_CLIENT_NOT_SO_SECRET: ${{ secrets.COLAB_EXTENSION_CLIENT_NOT_SO_SECRET }}
     steps:
-      # Must checkout before running the composite action since it relies on the
-      # code being present. Only do this for same-repository PRs invocations.
-      - if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/checkout@v6
-      - name: Run E2E Tests (Same Repository)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: ./.github/actions/run-e2e
-      - name: Skip E2E Tests (Fork)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+      # Decide up front whether E2E can run at all, without ever printing
+      # secret values: forks never qualify (no repository secrets), and
+      # same-repository runs only qualify once every required env var/secret
+      # is actually populated (i.e. the "E2E Tests" environment is configured).
+      - name: Check E2E configuration
+        id: e2e_config
         run: |
-          echo "E2E tests are skipped for PRs originating from forks."
-          echo "Forks don't have access to repository secrets, they cannot authenticate with the backend."
-          echo "A maintainer should test these changes by pushing the fork's branch to the main repository."
+          if [[ "$IS_FORK_PR" == "true" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "reason=E2E tests are skipped for PRs originating from forks. Forks don't have access to repository secrets, so they cannot authenticate with the backend. A maintainer should test these changes by pushing the fork's branch to the main repository." >> "$GITHUB_OUTPUT"
+          elif [[ -z "$COLAB_EXTENSION_ENVIRONMENT" || -z "$COLAB_EXTENSION_CLIENT_ID" || -z "$COLAB_EXTENSION_CLIENT_NOT_SO_SECRET" || -z "$TEST_ACCOUNT_EMAIL" || -z "$TEST_ACCOUNT_PASSWORD" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "reason=E2E tests are skipped: this repository does not have the 'E2E Tests' environment configured with the required secrets/variables (COLAB_EXTENSION_ENVIRONMENT, COLAB_EXTENSION_CLIENT_ID, COLAB_EXTENSION_CLIENT_NOT_SO_SECRET, TEST_ACCOUNT_EMAIL, TEST_ACCOUNT_PASSWORD). Configure that environment in repository settings to enable E2E tests." >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Must checkout before running the composite action since it relies on the
+      # code being present.
+      - if: steps.e2e_config.outputs.configured == 'true'
+        uses: actions/checkout@v6
+      - name: Run E2E Tests
+        if: steps.e2e_config.outputs.configured == 'true'
+        uses: ./.github/actions/run-e2e
+      - name: Skip E2E Tests
+        if: steps.e2e_config.outputs.configured != 'true'
+        run: echo "${{ steps.e2e_config.outputs.reason }}"
