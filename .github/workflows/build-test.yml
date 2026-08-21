@@ -33,6 +33,7 @@ jobs:
     name: Generate Config
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       actions: write
     steps:
       - uses: actions/checkout@v6
@@ -132,6 +133,7 @@ jobs:
   e2eTests:
     name: VS Code E2E Tests
     permissions:
+      contents: read
       actions: write
     # Conditionally use the E2E Tests environment to prevent untrusted code from
     # requiring approval and accessing secrets. Forks evaluate to an empty string,
